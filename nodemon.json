@@ -1,0 +1,9 @@
+{
+    "env": {
+        "API_URL":"muffins/v1",
+        "DATABASE":"mongodb+srv://aderito_muffins:Ymv63fzMHgqjlswX@muffins-tv.8phmr.mongodb.net/MutStore?retryWrites=true&w=majority&appName=Muffins-tv",
+        "API_NAME": "MutStoreApi",
+        "PORT": 3000
+
+    }
+}
