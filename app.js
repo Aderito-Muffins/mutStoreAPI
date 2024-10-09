@@ -32,8 +32,6 @@ app.use(`/${api}/apps`, routerApps)
 
 app.use(`/${api}/users`, routerUsers)
 
-app.use(`/${api}/statistics`, routerStatistic)
-
 app.use(`/${api}/products`, routerProduts)
 
 app.use((req, res, next) => {

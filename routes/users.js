@@ -1,137 +1,237 @@
 const express = require('express');
 const connectDB = require('../database/mongodb');
 const User = require('../models/user');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
+const { body, validationResult, check } = require('express-validator');
 const router = express.Router();
 
+// Configurações
+const JWT_SECRET = process.env.JWT_SECRET || 'eusoufudido'; // Use uma variável de ambiente para segurança
+
 // Conectar ao banco de dados antes de qualquer rota ser chamada
-connectDB()
+connectDB();
+
+
+
+
+const nodemailer = require('nodemailer');
+
+// Crie um transportador usando SMTP
+const transporter = nodemailer.createTransport({
+    host: 'smtp.zoho.com',
+    port: 587,
+    secure: false, // true para 465, false para outras portas
+    auth: {
+        user: 'aderitomuffins@muffinstv.wuaze.com', // seu e-mail
+        pass: 'Helbonito2000@' // sua senha do Zoho
+    }
+});
+
+// Defina as opções do e-mail
+const mailOptions = {
+    from: 'support@muffinstv.wuaze.com',
+    to: 'mufumeaderito@gmail.com', // e-mail do destinatário
+    subject: 'Assunto do E-mail',
+    text: 'Conteúdo do e-mail aqui!'
+};
+
+// Enviar o e-mail
+transporter.sendMail(mailOptions, (error, info) => {
+    if (error) {
+        return console.log('Erro ao enviar e-mail: ' + error);
+    }
+    console.log('E-mail enviado: ' + info.response);
+});
+
+// Middleware para verificar o token
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (!token) return res.status(401).send({ error_code: 1, info: "Ruim", msg: "Token necessário" });
+
+    jwt.verify(token, JWT_SECRET, (err, user) => {
+        if (err) return res.status(403).send({ error_code: 1, info: "Ruim", msg: "Token inválido" });
+        req.user = user;
+        next();
+    });
+};
 
 // Rota de boas-vindas
 router.get('/', (req, res) => {
     res.status(200).send({
         error_code: 0,
-        info: "Good",
-        msg: "Welcome to Muffins Services API"
+        info: "Bom",
+        msg: "Bem-vindo à API de Serviços Muffins"
     });
 });
 
 // Rota de login
-router.post('/login', async (req, res) => {
-    const { email, pass } = req.body;
+router.post('/login', [
+    body('username')
+        .trim()
+        .notEmpty().withMessage('O nome de usuário é obrigatório.')
+        .isLength({ min: 3 }).withMessage('O nome de usuário deve ter pelo menos 3 caracteres.'),
+    body('password')
+        .trim()
+        .notEmpty().withMessage('A senha é obrigatória.')
+        .isLength({ min: 6 }).withMessage('A senha deve ter pelo menos 6 caracteres.')
+], async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).send({
+            error_code: 1,
+            info: "Ruim",
+            msg: "Falha na validação",
+            errors: errors.array()
+        });
+    }
+
+    const { username, password } = req.body;
+
     try {
-        const user = await User.findOne({ email, pass });
-        if (user) {
+        const user = await User.findOne({ username });
+        if (user && bcrypt.compareSync(password, user.password)) {
+            const token = jwt.sign({ id: user._id, username: user.username }, JWT_SECRET, { expiresIn: '1h' });
             return res.status(200).send({
                 error_code: 0,
-                info: "Good",
-                msg: "Login Successful",
-                user: user
+                info: "Bom",
+                msg: "Login realizado com sucesso",
+                token: token
             });
         } else {
             return res.status(400).send({
                 error_code: 1,
-                info: "Bad",
-                msg: "Invalid credentials"
+                info: "Ruim",
+                msg: "Credenciais inválidas"
             });
         }
     } catch (error) {
+        console.error(error); // Log do erro para depuração
         return res.status(500).send({
             error_code: 1,
-            info: "Bad",
-            msg: "Error processing request",
+            info: "Ruim",
+            msg: "Erro ao processar a solicitação",
             error: error.message
         });
     }
 });
 
 // Rota de registro
-router.post('/register', async (req, res) => {
-    const { fullname, email, username, perfilUrl, pass } = req.body;
+router.post('/register', [
+    check('name').notEmpty().withMessage('O nome é obrigatório.'),
+    check('email').isEmail().withMessage('O email é inválido.'),
+    check('username').notEmpty().withMessage('O nome de usuário é obrigatório.'),
+    check('password').isLength({ min: 6 }).withMessage('A senha deve ter pelo menos 6 caracteres.'),
+    check('mobileNumber')
+        .matches(/^\+258[0-9]{9}$/).withMessage('O número de telefone deve ser um número mozambicano no formato +258XXXXXXXXX.')
+], async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).send({
+            error_code: 1,
+            info: "Ruim",
+            msg: "Erro na validação dos dados",
+            errors: errors.array()
+        });
+    }
+
+    const { name, email, username, password, mobileNumber } = req.body;
+    
     try {
-        const newUser = new User({ fullName: fullname, email, username, perfilUrl, pass });
+        const existingUser = await User.findOne({ username });
+        if (existingUser) {
+            return res.status(400).send({
+                error_code: 1,
+                info: "Ruim",
+                msg: "Nome de usuário já existe"
+            });
+        }
+
+        const hashedPassword = bcrypt.hashSync(password, 10);
+        const newUser = new User({ name, email, username, password: hashedPassword, mobileNumber });
         const savedUser = await newUser.save();
         return res.status(201).send({
             error_code: 0,
-            info: "Good",
-            msg: "User Added Successfully",
+            info: "Bom",
+            msg: "Usuário criado com sucesso",
             user: savedUser
         });
     } catch (error) {
         return res.status(400).send({
             error_code: 1,
-            info: "Bad",
-            msg: "Error adding user",
+            info: "Ruim",
+            msg: "Erro ao adicionar o usuário",
             error: error.message
         });
     }
 });
 
 // Rota para listar usuário por email
-router.get('/list/email', async (req, res) => {
-    const { email } = req.body;
+router.get('/list/email', authenticateToken, async (req, res) => {
+    const { email } = req.query;
     try {
         const user = await User.findOne({ email });
         if (user) {
             return res.status(200).send({
                 error_code: 0,
-                info: "Good",
-                msg: "User Found",
+                info: "Bom",
+                msg: "Usuário encontrado",
                 user: user
             });
         } else {
             return res.status(404).send({
                 error_code: 1,
-                info: "Bad",
-                msg: "User not found"
+                info: "Ruim",
+                msg: "Usuário não encontrado"
             });
         }
     } catch (error) {
         return res.status(500).send({
             error_code: 1,
-            info: "Bad",
-            msg: "Error retrieving user",
+            info: "Ruim",
+            msg: "Erro ao recuperar o usuário",
             error: error.message
         });
     }
 });
 
 // Rota para listar todos os usuários
-router.get('/list-all', async (req, res) => {
+router.get('/list-all', authenticateToken, async (req, res) => {
     try {
         const users = await User.find();
         const listUserData = users.map(user => ({
             id: user._id,
-            fullName: user.fullName,
+            fullName: user.name,
             username: user.username,
             email: user.email,
-            perfilUrl: user.perfilUrl,
-            activateStatus: user.activateStatus,
-            posted: user.posted
+            mobileNumber: user.mobileNumber,
+            activateStatus: user.activateStatus
         }));
         return res.status(200).send({
             error_code: 0,
-            info: "Good",
-            msg: "Users Listed",
+            info: "Bom",
+            msg: "Usuários listados",
             users: listUserData
         });
     } catch (error) {
         return res.status(500).send({
             error_code: 1,
-            info: "Bad",
-            msg: "Error retrieving users",
+            info: "Ruim",
+            msg: "Erro ao recuperar usuários",
             error: error.message
         });
     }
 });
 
 // Rota para alterar o status do usuário
-router.put('/change-status', async (req, res) => {
+router.put('/change-status', authenticateToken, async (req, res) => {
     const { email, status } = req.body;
     if (status !== true && status !== false) {
         return res.status(400).send({
             error_code: 1,
-            info: "Bad",
-            msg: "Unsupported Value of Status"
+            info: "Ruim",
+            msg: "Valor de status não suportado"
         });
     }
     try {
@@ -141,53 +241,62 @@ router.put('/change-status', async (req, res) => {
             const updatedUser = await user.save();
             return res.status(200).send({
                 error_code: 0,
-                info: "Good",
-                msg: "Status Updated",
+                info: "Bom",
+                msg: "Status atualizado",
                 user: updatedUser
             });
         } else {
             return res.status(404).send({
                 error_code: 1,
-                info: "Bad",
-                msg: "User not found"
+                info: "Ruim",
+                msg: "Usuário não encontrado"
             });
         }
     } catch (error) {
         return res.status(500).send({
             error_code: 1,
-            info: "Bad",
-            msg: "Error processing request",
+            info: "Ruim",
+            msg: "Erro ao processar a solicitação",
             error: error.message
         });
     }
 });
 
 // Rota para alterar a senha do usuário
-router.put('/change-psw', async (req, res) => {
+router.put('/change-psw', authenticateToken, async (req, res) => {
     const { email, new_pass } = req.body;
+    if (!new_pass || new_pass.length < 6) {
+        return res.status(400).send({
+            error_code: 1,
+            info: "Ruim",
+            msg: "A nova senha deve ter pelo menos 6 caracteres."
+        });
+    }
+
     try {
+        const hashedPassword = bcrypt.hashSync(new_pass, 10);
         const user = await User.findOne({ email });
         if (user) {
-            user.pass = new_pass;
+            user.password = hashedPassword;
             const updatedUser = await user.save();
             return res.status(200).send({
                 error_code: 0,
-                info: "Good",
-                msg: "Password Updated",
+                info: "Bom",
+                msg: "Senha atualizada",
                 user: updatedUser
             });
         } else {
             return res.status(404).send({
                 error_code: 1,
-                info: "Bad",
-                msg: "User not found"
+                info: "Ruim",
+                msg: "Usuário não encontrado"
             });
         }
     } catch (error) {
         return res.status(500).send({
             error_code: 1,
-            info: "Bad",
-            msg: "Error processing request",
+            info: "Ruim",
+            msg: "Erro ao processar a solicitação",
             error: error.message
         });
     }

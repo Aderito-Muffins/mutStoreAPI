@@ -1,10 +1,24 @@
 const express = require('express');
 const connectDB = require('../database/mongodb'); // Se necessário para conexão com o banco de dados
-const App = require('../models/app'); // Supondo que há um modelo App para aplicativos
+const AppModel = require('../models/app'); // Supondo que há um modelo App para aplicativos
 const router = express.Router();
+const { upload, uploadToFirebase } = require("../database/googledb");
 
 // Conectar ao banco de dados (se necessário)
 connectDB()
+
+const generateUniqueId = async () => {
+    let newId;
+    let exists = true;
+
+    while (exists) {
+        newId = Math.floor(Math.random() * 1000000); // Gera um número aleatório
+        const existingApp = await AppModel.findOne({ id: newId });
+        exists = existingApp !== null; // Verifica se já existe
+    }
+
+    return newId;
+};
 // Rota de boas-vindas
 router.get('/', (req, res) => {
     res.status(200).send({
@@ -13,213 +27,157 @@ router.get('/', (req, res) => {
 });
 
 // Rota para adicionar um aplicativo
-router.post('/add', async (req, res) => {
-    const { appName, packageName, category, description, logoUrl, version, price } = req.body;
+router.post('/create/app', upload, async (req, res) => {
     try {
-        const newApp = new App({ appName, packageName, category, description, logoUrl, version, price });
-        const savedApp = await newApp.save();
-        return res.status(201).send({
-            error_code: 0,
-            info: "Good",
-            msg: "App added successfully",
-            app: savedApp
-        });
-    } catch (error) {
-        return res.status(400).send({
-            error_code: 1,
-            info: "Bad",
-            msg: "Error adding app",
-            error: error.message
-        });
-    }
-});
-
-// Rota para atualizar um aplicativo
-router.put('/update', async (req, res) => {
-    const { packageName, appName, category, description, logoUrl } = req.body;
-
-    // Validar a entrada
-    if (!packageName) {
-        return res.status(400).send({
-            error_code: 1,
-            info: "Bad",
-            msg: "Package name is required"
-        });
-    }
-
-    try {
-        // Encontrar e atualizar o aplicativo com base no packageName
-        const updatedApp = await App.findOneAndUpdate(
-            { packageName }, // Filtro para encontrar o aplicativo
-            { appName, category, description, logoUrl }, // Atualizar os campos
-            { new: true } // Retornar o documento atualizado
-        );
-
-        if (updatedApp) {
-            return res.status(200).send({
-                error_code: 0,
-                info: "Good",
-                msg: "App updated successfully",
-                app: updatedApp
-            });
-        } else {
-            return res.status(404).send({
-                error_code: 1,
-                info: "Bad",
-                msg: "App not found"
-            });
-        }
-    } catch (error) {
-        return res.status(400).send({
-            error_code: 1,
-            info: "Bad",
-            msg: "Error updating app",
-            error: error.message
-        });
-    }
-});
-
-// Rota para listar todos os aplicativos
-router.get('/list-all', async (req, res) => {
-    try {
-        const apps = await App.find(); // Encontra todos os aplicativos
-        return res.status(200).send({
-            error_code: 0,
-            info: "Good",
-            msg: "Apps fetched successfully",
-            apps
-        });
-    } catch (error) {
-        return res.status(400).send({
-            error_code: 1,
-            info: "Bad",
-            msg: "Error fetching apps",
-            error: error.message
-        });
-    }
-});
-
-// Rota para buscar um aplicativo específico por ID
-router.get('/list/', async (req, res) => {
-    const { packageName } = req.body;
-    try {
-        const app = await App.findOne({packageName: packageName}); // Encontra o aplicativo por ID
-        if (app) {
-            return res.status(200).send({
-                error_code: 0,
-                info: "Good",
-                msg: "App fetched successfully",
-                app
-            });
-        } else {
-            return res.status(404).send({
-                error_code: 1,
-                info: "Bad",
-                msg: "App not found"
-            });
-        }
-    } catch (error) {
-        return res.status(400).send({
-            error_code: 1,
-            info: "Bad",
-            msg: "Error fetching app",
-            error: error.message
-        });
-    }
-});
-
-// Rota para listar aplicativos por categoria
-router.get('/list/category', async (req, res) => {
-    const { category } = req.query;
-    try {
-        if(!category){
-        const apps = await App.find({ category }); // Encontra aplicativos por categoria
-        return res.status(200).send({
-            error_code: 0,
-            info: "Good",
-            msg: "Apps fetched successfully",
-            apps
-        });}
-        return res.status(404).send({
-            error_code: 1,
-            info: "Bad",
-            msg: "Apps not found"
-        });
-
-    } catch (error) {
-        return res.status(400).send({
-            error_code: 1,
-            info: "Bad",
-            msg: "Error fetching apps",
-            error: error.message
-        });
-    }
-});
-
-// Rota para listar aplicativos por faixa de preço
-router.get('/list/price', async (req, res) => {
-    const { minPrice, maxPrice } = req.query;
-    try {
-        // Converte os preços para número
-        const min = parseFloat(minPrice) || 0;
-        const max = parseFloat(maxPrice) || Number.MAX_SAFE_INTEGER;
-        
-        const apps = await App.find({
-            price: { $gte: min, $lte: max } // Filtra aplicativos por faixa de preço
-        });
-        return res.status(200).send({
-            error_code: 0,
-            info: "Good",
-            msg: "Apps fetched successfully",
-            apps
-        });
-    } catch (error) {
-        return res.status(400).send({
-            error_code: 1,
-            info: "Bad",
-            msg: "Error fetching apps",
-            error: error.message
-        });
-    }
+      const { nome, developerName, preco, description, politics, isMpesa, isEmola, isBankCard  } = req.body;
   
-});
-
-router.put('/change-status', async (req, res) => {
-    const { packageName, status } = req.body;
-    if (status !== true && status !== false) {
-        return res.status(400).send({
-            error_code: 1,
-            info: "Bad",
-            msg: "Unsupported Value of Status"
-        });
-    }
-    try {
-        const app = await App.findOne({ packageName });
-        if (app) {
-            app.activateStatus = status;
-            const updatedUser = await app.save();
-            return res.status(200).send({
-                error_code: 0,
-                info: "Good",
-                msg: "Status Updated",
-                user: updatedUser
-            });
-        } else {
-            return res.status(404).send({
-                error_code: 1,
-                info: "Bad",
-                msg: "User not found"
-            });
+      // Gerar um ID único (deve ser numérico se o modelo exige)
+      const uniqueID = await generateUniqueId(); // Certifique-se de que isso retorna um número
+  
+      // Agora que temos o ID, podemos passar para o upload
+      req.body.id = uniqueID; // Passa o ID gerado para o req.body, para ser usado no upload
+  
+      // Chama o middleware de upload para Firebase, passando o ID gerado
+      await uploadToFirebase(req, res, async (err) => {
+        if (err) {
+          return res.status(500).send({ code: 1, message: 'Erro ao fazer upload das imagens', error: err.message });
         }
-    } catch (error) {
-        return res.status(500).send({
-            error_code: 1,
-            info: "Bad",
-            msg: "Error processing request",
-            error: error.message
+  
+        // Verifica se o ícone foi carregado com sucesso
+        const iconUrl = req.file && req.file.iconUrl ? req.file.iconUrl : null;
+        if (!iconUrl) {
+          return res.status(400).send({ code: 1, message: 'O campo icon é obrigatório.' });
+        }
+
+        const appFileUrl = req.file && req.file.appUrl ? req.file.appUrl : null;
+        if (!appFileUrl) {
+          return res.status(400).send({ code: 1, message: 'O campo appFile é obrigatório.' });
+        }
+  
+  
+        // Coleta as URLs das imagens de captura de tela
+        const imagePaths = req.file.firebaseUrls || [];
+  
+        // Cria uma nova instância do modelo de aplicativo
+        const newApp = new AppModel({
+          id: uniqueID, // Certifique-se de que uniqueID é um número
+          icon: iconUrl, // URL da imagem do ícone
+          nome,
+          developerName,
+          imagePaths, // URLs das imagens de captura de tela
+          preco,
+          description,
+          politics,
+          appFilePath: appFileUrl,
+          payments:{
+            isEmola,
+            isMpesa,
+            isBankCard
+          }
         });
+  
+        // Salvar o novo app
+        await newApp.save();
+        res.status(201).send({ code: 0, message: 'Aplicativo salvo com sucesso!', app: newApp });
+      });
+    } catch (error) {
+      console.error('Error saving the app:', error);
+      res.status(500).send({ code: 1, message: 'Erro ao salvar o aplicativo', error: error.message });
+    }
+  });
+  // Rota para listar todos os aplicativos
+  router.get('/list/apps', async (req, res) => {
+    try {
+        const apps = await AppModel.find().select('-_id'); // Excluir o campo _id
+        res.status(200).send({ code: 0, message: 'Lista de aplicativos recuperada com sucesso!', apps });
+    } catch (error) {
+        console.error('Erro ao recuperar aplicativos:', error);
+        res.status(500).send({ code: 1, message: 'Erro ao recuperar aplicativos', error: error.message });
     }
 });
 
+// Rota para visualizar um aplicativo específico
+router.get('/list/app/:id', async (req, res) => {
+    try {
+        const appId = req.params.id;
+        const app = await AppModel.findOne({ id: appId });
 
+        if (!app) {
+            return res.status(404).send({ code: 1, message: 'Aplicativo não encontrado.' });
+        }
+
+        res.status(200).send({ code: 0,
+             message: 'Aplicativo encontrado!',
+              app: {
+
+              }
+            });
+    } catch (error) {
+        console.error('Erro ao recuperar o aplicativo:', error);
+        res.status(500).send({ code: 1, message: 'Erro ao recuperar o aplicativo', error: error.message });
+    }
+});
+// Rota para atualizar um aplicativo
+router.put('/update/app/:id', upload, async (req, res) => {
+    try {
+        const appId = req.params.id;
+        const { nome, developerName, preco, description, politics, isMpesa, isEmola, isBankCard } = req.body;
+
+        // Verifica se o aplicativo existe
+        const existingApp = await AppModel.findOne({ id: appId });
+        if (!existingApp) {
+            return res.status(404).send({ code: 1, message: 'Aplicativo não encontrado.' });
+        }
+
+        // Chama o middleware de upload para Firebase, se necessário
+        await uploadToFirebase(req, res, async (err) => {
+            if (err) {
+                return res.status(500).send({ code: 1, message: 'Erro ao fazer upload das imagens', error: err.message });
+            }
+
+            // Atualiza os dados do aplicativo
+            existingApp.nome = nome || existingApp.nome;
+            existingApp.developerName = developerName || existingApp.developerName;
+            existingApp.preco = preco || existingApp.preco;
+            existingApp.description = description || existingApp.description;
+            existingApp.politics = politics || existingApp.politics;
+
+            // Atualiza os caminhos do ícone e do aplicativo, se fornecidos
+            if (req.file) {
+                existingApp.icon = req.file.iconUrl || existingApp.icon;
+                existingApp.appFilePath = req.file.appUrl || existingApp.appFilePath;
+                existingApp.imagePaths = req.file.firebaseUrls || existingApp.imagePaths;
+            }
+
+            existingApp.payments.isEmola = isEmola !== undefined ? isEmola : existingApp.payments.isEmola;
+            existingApp.payments.isMpesa = isMpesa !== undefined ? isMpesa : existingApp.payments.isMpesa;
+            existingApp.payments.isBankCard = isBankCard !== undefined ? isBankCard : existingApp.payments.isBankCard;
+
+            // Salva as alterações
+            await existingApp.save();
+            res.status(200).send({ code: 0, message: 'Aplicativo atualizado com sucesso!', app: existingApp });
+        });
+    } catch (error) {
+        console.error('Erro ao atualizar o aplicativo:', error);
+        res.status(500).send({ code: 1, message: 'Erro ao atualizar o aplicativo', error: error.message });
+    }
+});
+// Rota para excluir um aplicativo
+router.delete('/delete/app/:id', async (req, res) => {
+    try {
+        const appId = req.params.id;
+        const deletedApp = await AppModel.findOneAndDelete({ id: appId });
+
+        if (!deletedApp) {
+            return res.status(404).send({ code: 1, message: 'Aplicativo não encontrado.' });
+        }
+
+        res.status(200).send({ code: 0, message: 'Aplicativo excluído com sucesso!', app: deletedApp });
+    } catch (error) {
+        console.error('Erro ao excluir o aplicativo:', error);
+        res.status(500).send({ code: 1, message: 'Erro ao excluir o aplicativo', error: error.message });
+    }
+});
+
+  
 module.exports = router;
