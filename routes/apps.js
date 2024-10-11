@@ -19,6 +19,8 @@ const generateUniqueId = async () => {
 
     return newId;
 };
+
+
 // Rota de boas-vindas
 router.get('/', (req, res) => {
     res.status(200).send({
@@ -85,6 +87,7 @@ router.post('/create/app', upload, async (req, res) => {
       res.status(500).send({ code: 1, message: 'Erro ao salvar o aplicativo', error: error.message });
     }
   });
+
   // Rota para listar todos os aplicativos
   router.get('/list/apps', async (req, res) => {
     try {
