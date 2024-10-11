@@ -344,7 +344,7 @@ router.post('/reset-password', async (req, res) => {
 
 
 // Rota para listar usuário por email
-router.get('/list/email', authenticateToken, async (req, res) => {
+router.get('/list/user', authenticateToken, async (req, res) => {
     const { email } = req.query;
     try {
         const user = await User.findOne({ email });

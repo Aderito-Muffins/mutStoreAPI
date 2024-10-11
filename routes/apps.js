@@ -1,6 +1,7 @@
 const express = require('express');
 const connectDB = require('../database/mongodb'); // Se necessário para conexão com o banco de dados
 const AppModel = require('../models/app'); // Supondo que há um modelo App para aplicativos
+
 const router = express.Router();
 const { upload, uploadToFirebase } = require("../database/googledb");
 require('dotenv').config();
@@ -27,6 +28,75 @@ router.get('/', (req, res) => {
     res.status(200).send({
         message: 'Welcome to the App Store API'
     });
+});
+
+
+
+// Função para buscar a lista resumida
+router.get('/summary', async (req, res) => {
+    try {
+        // Extrai parâmetros da query string
+        const { limit = 10, offset = 0, type } = req.query; // limit e offset com valores padrão
+
+        // Cria um objeto de consulta com base no tipo (jogo ou aplicação)
+        const query = type ? { tipo: type } : {}; // Assumindo que você tem um campo `tipo` no seu modelo
+
+        // Busca os apps com limit e offset
+        const apps = await AppModel.find(query)
+            .select('nome icon id')
+            .skip(Number(offset))  // Aplicando offset
+            .limit(Number(limit));  // Aplicando limit
+
+        // Mapeia os apps para o formato desejado
+        const formattedApps = apps.map(app => ({
+            appId: app.id,   // Ou app._id, dependendo do seu esquema
+            nome: app.nome,
+            iconUrl: app.icon
+        }));
+
+        // Total de apps para facilitar a paginação
+        const totalApps = await AppModel.countDocuments(query);
+
+        res.status(200).json({
+            error_code: 0,
+            message: "Carregado!",
+            total: totalApps,  // Adiciona total de apps encontrados
+            apps: formattedApps // Envia a lista formatada de apps
+        });
+    } catch (error) {
+        res.status(500).json({ message: 'Erro ao buscar os apps', error });
+    }
+});
+
+router.get('/moreInfo/:id', async (req, res) => {
+    try {
+        const { id } = req.query; // Obtém o ID do aplicativo a partir dos parâmetros da URL
+
+        // Busca o aplicativo pelo ID
+        const app = await AppModel.findOne({appId: id});
+
+        // Verifica se o aplicativo foi encontrado
+        if (!app) {
+            return res.status(404).json({
+                error_code: 1,
+                message: 'Aplicativo não encontrado'
+            });
+        }
+
+    
+
+        res.status(200).json({
+            error_code: 0,
+            message: 'Detalhes do aplicativo carregados!',
+            app
+        });
+    } catch (error) {
+        res.status(500).json({ 
+            error_code: 2,
+            message: 'Erro ao buscar os detalhes do aplicativo',
+            error: error.message
+        });
+    }
 });
 
 // Rota para adicionar um aplicativo
