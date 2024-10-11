@@ -2,6 +2,7 @@ const http = require('http');
 const app = require('./app');
 const port = process.env.PORT || 3000;
 const server = http.createServer(app);
+require('dotenv').config();
 
 // Configurando o timeout do servidor
 server.setTimeout(300000, () => { // 5 minutos

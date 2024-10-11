@@ -6,6 +6,7 @@ const routerUsers = require('./routes/users')
 const routerStatistic = require('./routes/statistics')
 const routerProduts = require('./routes/products')
 const morgan = require('morgan')
+require('dotenv').config();
 
 app.use(express.json());
 app.use(express.urlencoded({ extends: true }));

@@ -3,6 +3,7 @@ const connectDB = require('../database/mongodb'); // Se necessário para conexã
 const AppModel = require('../models/app'); // Supondo que há um modelo App para aplicativos
 const router = express.Router();
 const { upload, uploadToFirebase } = require("../database/googledb");
+require('dotenv').config();
 
 // Conectar ao banco de dados (se necessário)
 connectDB()
