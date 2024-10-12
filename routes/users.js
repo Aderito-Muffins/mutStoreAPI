@@ -345,15 +345,20 @@ router.post('/reset-password', async (req, res) => {
 
 // Rota para listar usuário por email
 router.get('/list/user', authenticateToken, async (req, res) => {
-    const { email } = req.query;
     try {
-        const user = await User.findOne({ email });
+        // Pegando o email diretamente do token decodificado (provavelmente dentro de req.user)
+        const username = req.user.username;
+
+        // Procurar o usuário pelo email
+        const user = await User.findOne({ username });
+
+        // Verifica se o usuário foi encontrado
         if (user) {
             return res.status(200).send({
                 error_code: 0,
                 info: "Bom",
                 msg: "Usuário encontrado",
-                user: user
+                user: user // Retorna os dados do usuário
             });
         } else {
             return res.status(404).send({
@@ -363,14 +368,16 @@ router.get('/list/user', authenticateToken, async (req, res) => {
             });
         }
     } catch (error) {
+        // Captura qualquer erro inesperado
         return res.status(500).send({
             error_code: 1,
             info: "Ruim",
             msg: "Erro ao recuperar o usuário",
-            error: error.message
+            error: error.message // Detalha o erro para facilitar o debug
         });
     }
 });
+
 
 // Rota para listar todos os usuários
 router.get('/list-all', authenticateToken, async (req, res) => {
