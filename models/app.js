@@ -38,7 +38,6 @@ const appSchema = new mongoose.Schema({
     },
     type: {
         type: String,
-        required: true,
         enum: ['game', 'app'], // Permite apenas 'game' ou 'app'
         lowercase: true // Converte o valor para minúsculas, se necessário
     },

@@ -2,6 +2,7 @@ const express = require('express');
 const connectDB = require('../database/mongodb');
 const User = require('../models/user');
 const Feedback = require('../models/feedback');
+const authenticateToken = require('../middleware/jwt');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { body, validationResult, check } = require('express-validator');
@@ -38,17 +39,17 @@ const generateUniqueIdFeedback = async () => {
 
 
 // Middleware para verificar o token
-const authenticateToken = (req, res, next) => {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-    if (!token) return res.status(401).send({ error_code: 1, info: "Ruim", msg: "Token necessário" });
+// const authenticateToken = (req, res, next) => {
+//     const authHeader = req.headers['authorization'];
+//     const token = authHeader && authHeader.split(' ')[1];
+//     if (!token) return res.status(401).send({ error_code: 1, info: "Ruim", msg: "Token necessário" });
 
-    jwt.verify(token, JWT_SECRET, (err, user) => {
-        if (err) return res.status(403).send({ error_code: 1, info: "Ruim", msg: "Token inválido" });
-        req.user = user;
-        next();
-    });
-};
+//     jwt.verify(token, JWT_SECRET, (err, user) => {
+//         if (err) return res.status(403).send({ error_code: 1, info: "Ruim", msg: "Token inválido" });
+//         req.user = user;
+//         next();
+//     });
+// };
 
 // Rota de boas-vindas
 router.get('/', (req, res) => {
@@ -129,7 +130,7 @@ router.post('/register', [
         });
     }
 
-    const { name, email, username, password, mobileNumber } = req.body;
+    const { name, email, username, password, mobileNumber, userType } = req.body;
     
     try {
         const existingUser = await User.findOne({ username });
@@ -142,7 +143,7 @@ router.post('/register', [
         }
 
         const hashedPassword = bcrypt.hashSync(password, 10);
-        const newUser = new User({ name, email, username, password: hashedPassword, mobileNumber });
+        const newUser = new User({ name, email, username, password: hashedPassword, mobileNumber, userType });
         const savedUser = await newUser.save();
         return res.status(201).send({
             error_code: 0,
@@ -358,7 +359,16 @@ router.get('/list/user', authenticateToken, async (req, res) => {
                 error_code: 0,
                 info: "Bom",
                 msg: "Usuário encontrado",
-                user: user // Retorna os dados do usuário
+                user: {
+                    name: user.name,
+                    email: user.email,
+                    username: user.username,
+                    mobileNumber: user.mobileNumber,
+                    userStatus: user.userStatus,
+                    userType: user.userType,
+                    bi_Url: user.bi_Url,
+                    posted: user.posted
+                } // Retorna os dados do usuário
             });
         } else {
             return res.status(404).send({
@@ -384,12 +394,14 @@ router.get('/list-all', authenticateToken, async (req, res) => {
     try {
         const users = await User.find();
         const listUserData = users.map(user => ({
-            id: user._id,
-            fullName: user.name,
+            name: user.name,
             username: user.username,
             email: user.email,
             mobileNumber: user.mobileNumber,
-            activateStatus: user.activateStatus
+            userType: user.userType,
+            validated: user.validated,
+            bi_Url: user.bi_Url,
+            posted: user.posted
         }));
         return res.status(200).send({
             error_code: 0,
@@ -407,28 +419,48 @@ router.get('/list-all', authenticateToken, async (req, res) => {
     }
 });
 
-// Rota para alterar o status do usuário
 router.put('/change-status', authenticateToken, async (req, res) => {
-    const { email, status } = req.body;
-    if (status !== true && status !== false) {
+    const { username, status } = req.body;
+    
+    // Obter o username do usuário autenticado a partir do token
+    const adminUsername = req.user.username;
+
+    // Verificar se o status enviado é válido
+    if (typeof status !== 'boolean') {
         return res.status(400).send({
             error_code: 1,
             info: "Ruim",
-            msg: "Valor de status não suportado"
+            msg: "Valor de status não suportado. Use true ou false."
         });
     }
+
     try {
-        const user = await User.findOne({ email });
+        // Verificar se o usuário autenticado é um administrador
+        const adminUser = await User.findOne({ username: adminUsername });
+        if (!adminUser || adminUser.userType != "admin") {
+            return res.status(403).send({
+                error_code: 1,
+                info: "Ruim",
+                msg: "Acesso negado. Apenas administradores podem alterar o status de um usuário."
+            });
+        }
+
+        // Procurar o usuário cujo status será alterado
+        const user = await User.findOne({ username });
         if (user) {
-            user.activateStatus = status;
+            // Atualizar o status do usuário
+            user.validated = status ? 0 : 1; // 0 para aprovado, 1 para recusado
             const updatedUser = await user.save();
+
+            // Resposta de sucesso
             return res.status(200).send({
                 error_code: 0,
                 info: "Bom",
-                msg: "Status atualizado",
+                msg: "Status atualizado com sucesso",
                 user: updatedUser
             });
         } else {
+            // Caso o usuário não seja encontrado
             return res.status(404).send({
                 error_code: 1,
                 info: "Ruim",
@@ -436,6 +468,7 @@ router.put('/change-status', authenticateToken, async (req, res) => {
             });
         }
     } catch (error) {
+        // Capturar erros de execução
         return res.status(500).send({
             error_code: 1,
             info: "Ruim",
@@ -444,6 +477,7 @@ router.put('/change-status', authenticateToken, async (req, res) => {
         });
     }
 });
+
 
 // Rota para alterar a senha do usuário
 router.put('/change-psw', authenticateToken, async (req, res) => {
