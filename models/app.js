@@ -36,10 +36,14 @@ const appSchema = new mongoose.Schema({
         type: String,
         required: true
     },
-    type: {
+    category: {
         type: String,
         enum: ['game', 'app'], // Permite apenas 'game' ou 'app'
         lowercase: true // Converte o valor para minúsculas, se necessário
+    },
+    download: {
+        type: Number,
+        Default: 0
     },
     politics: {
         type: String,

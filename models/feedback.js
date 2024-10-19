@@ -14,7 +14,7 @@ const appSchema = new mongoose.Schema({
         required: true,
     },
 
-    email: { type: String, required: true },
+    username: { type: String, required: true },
 
     comment: {
         type: String,

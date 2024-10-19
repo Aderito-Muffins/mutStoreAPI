@@ -1,4 +1,5 @@
 const express = require('express');
+const axios = require('axios');
 const connectDB = require('../database/mongodb'); // Se necessário para conexão com o banco de dados
 const AppModel = require('../models/app');
 const User = require('../models/user'); // Supondo que há um modelo App para aplicativos
@@ -70,7 +71,8 @@ router.get('/summary', async (req, res) => {
             appId: app.id,   // Ou app._id, dependendo do seu esquema
             nome: app.nome,
             iconUrl: app.icon,
-            category: app.category
+            category: app.category,
+            download: app.download
         }));
 
         // Total de apps para facilitar a paginação
@@ -90,7 +92,7 @@ router.get('/summary', async (req, res) => {
 router.get('/search', async (req, res) => {
     try {
         // Extrai parâmetros da query string
-        const { limit = 10, offset = 0, keyword, type } = req.query;
+        const { keyword, type } = req.query;
 
         // Cria um objeto de consulta
         const query = { isApproved: true }; // Apenas apps aprovados
@@ -109,21 +111,20 @@ router.get('/search', async (req, res) => {
             query.tipo = type; // Assumindo que você tem um campo `tipo` no seu modelo
         }
 
-        // Busca os apps com limit e offset
+        // Busca todos os apps que atendem à consulta
         const apps = await AppModel.find(query)
-            .select('nome icon id category description') // Adiciona os campos que deseja retornar
-            .skip(Number(offset))  // Aplicando offset
-            .limit(Number(limit));  // Aplicando limit
+            .select('nome icon id category description download'); // Adiciona os campos que deseja retornar
 
         // Mapeia os apps para o formato desejado
         const formattedApps = apps.map(app => ({
             appId: app.id,   // Ou app._id, dependendo do seu esquema
             nome: app.nome,
             iconUrl: app.icon,
-            category: app.category, // Opcional: descrição para resultados mais ricos
+            category: app.category,
+            download: app.download  // Opcional: descrição para resultados mais ricos
         }));
 
-        // Total de apps para facilitar a paginação
+        // Total de apps para facilitar a contagem
         const totalApps = await AppModel.countDocuments(query);
 
         res.status(200).json({
@@ -138,12 +139,13 @@ router.get('/search', async (req, res) => {
 });
 
 
-router.get('/moreInfo/:id', async (req, res) => {
+
+router.get('/moreInfo/:id', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params; // Obtém o ID do aplicativo a partir dos parâmetros da URL
 
-        // Busca o aplicativo pelo ID, omitindo o campo '_id' no retorno
-        const app = await AppModel.findOne({ id: id });
+        // Busca o aplicativo pelo ID
+        const app = await AppModel.findOne({ id: id }); // Verifique se "id" é o campo correto ou se deveria ser "_id"
 
         // Verifica se o aplicativo foi encontrado
         if (!app) {
@@ -151,6 +153,20 @@ router.get('/moreInfo/:id', async (req, res) => {
                 error_code: 1,
                 message: 'Aplicativo não encontrado'
             });
+        }
+
+        // Incrementa o número de downloads, inicializando se necessário
+        app.download = app.download ? app.download + 1 : 1;
+
+        // Salva a nova contagem de downloads no banco de dados
+        await app.save();
+
+        // Busca o usuário no banco de dados com base no username do token
+        const dbUser = await User.findOne({ username: req.user.username });
+
+        if (dbUser && dbUser.pagos && dbUser.pagos.includes(id)) {
+            // Se o aplicativo já foi comprado, define o preço como 0
+            app.preco = 0;
         }
 
         // Retorna os detalhes do aplicativo
@@ -162,12 +178,15 @@ router.get('/moreInfo/:id', async (req, res) => {
     } catch (error) {
         // Retorna erro em caso de falha
         res.status(500).json({
-            error_code: 2,
+            error_code: 3,
             message: 'Erro ao buscar os detalhes do aplicativo',
             error: error.message
         });
     }
 });
+
+
+
 
     
 
@@ -247,12 +266,14 @@ router.post('/create/app', upload, async (req, res) => {
 
 router.put('/change-status', authenticateToken, async (req, res) => {
     const { id, status } = req.body;
-    
+
     // Obter o username do usuário autenticado a partir do token
     const adminUsername = req.user.username;
+    console.log(`Admin Username: ${adminUsername}`);
 
-    // Verificar se o status enviado é válido
+    // Verificar se o status enviado é um booleano (true ou false)
     if (typeof status !== 'boolean') {
+        console.log(`Status recebido não é booleano: ${status}`);
         return res.status(400).send({
             error_code: 1,
             info: "Ruim",
@@ -263,40 +284,55 @@ router.put('/change-status', authenticateToken, async (req, res) => {
     try {
         // Verificar se o usuário autenticado é um administrador
         const adminUser = await User.findOne({ username: adminUsername });
+        console.log(`Admin User Found: ${adminUser}`);
         if (!adminUser || adminUser.userType !== "admin") {
+            console.log(`Acesso negado para o usuário: ${adminUsername}`);
             return res.status(403).send({
                 error_code: 1,
                 info: "Ruim",
-                msg: "Acesso negado. Apenas administradores podem alterar o status de um usuário."
+                msg: "Acesso negado. Apenas administradores podem alterar o status de uma aplicação."
             });
         }
 
-        // Procurar o usuário cujo status será alterado
-        const user = await AppModel.findOne({ id });
-        if (user) {
-            // Atualizar o status do usuário
-            user.isApproved = status; // status será true ou false
-            
-            // Salvar as alterações
-            const updatedUser = await user.save();
+        // Procurar a aplicação cujo status será alterado usando o campo "id" numérico
+        console.log(`Buscando aplicação com ID: ${Number(id)}`);
+        const app = await AppModel.findOne({ id: Number(id) }); // Garantir que id seja um número
+        console.log(`Aplicação encontrada: ${app}`);
 
-            // Resposta de sucesso
-            return res.status(200).send({
-                error_code: 0,
-                info: "Bom",
-                msg: "Status atualizado com sucesso",
-                user: updatedUser
-            });
-        } else {
-            // Caso o usuário não seja encontrado
+        if (!app) {
+            console.log(`Aplicação com ID ${id} não encontrada`);
             return res.status(404).send({
                 error_code: 1,
                 info: "Ruim",
-                msg: "Usuário não encontrado"
+                msg: "Aplicação não encontrada"
             });
         }
+
+        // Verificar se o campo isApproved já existe, e criar caso não exista
+        if (typeof app.isApproved === 'undefined') {
+            console.log(`Campo isApproved não encontrado, definindo como: ${status}`);
+            app.isApproved = status; // Adicionar o campo isApproved
+        } else {
+            // Atualizar o status da aplicação se o campo já existir
+            console.log(`Atualizando isApproved de ${app.isApproved} para ${status}`);
+            app.isApproved = status;
+        }
+
+        // Salvar as alterações
+        const updatedApp = await app.save();
+        console.log(`Aplicação atualizada: ${updatedApp}`);
+
+        // Resposta de sucesso
+        return res.status(200).send({
+            error_code: 0,
+            info: "Bom",
+            msg: "Status da aplicação atualizado com sucesso",
+            app: updatedApp
+        });
+
     } catch (error) {
-        // Capturar erros de execução
+        console.error(`Erro encontrado: ${error.message}`);
+        // Capturar e enviar detalhes do erro
         return res.status(500).send({
             error_code: 1,
             info: "Ruim",
@@ -305,6 +341,10 @@ router.put('/change-status', authenticateToken, async (req, res) => {
         });
     }
 });
+
+
+
+
 
 
 
@@ -390,10 +430,17 @@ router.delete('/delete/app/:id', async (req, res) => {
     }
 });
 
+let transactionReference;
+
 router.post('/purchase/app', authenticateToken, async (req, res) => {
     try {
-        const { msisdn, appId, paymentOption } = req.body;
+        let { msisdn, appId, paymentOption } = req.body; // Obter os dados da requisição
         const user = req.user;
+
+        // Verifica se o msisdn possui +258 e remove
+        if (msisdn.startsWith('+258')) {
+            msisdn = msisdn.replace('+258', ''); // Remove o prefixo
+        }
 
         if (!msisdn || !appId || !paymentOption) {
             return res.status(400).send({
@@ -404,7 +451,7 @@ router.post('/purchase/app', authenticateToken, async (req, res) => {
 
         // Verificar o aplicativo e sua validade
         const app = await AppModel.findOne({ id: appId });
-        if (!app || !app.isActive) {
+        if (!app || !app.isApproved) {
             return res.status(400).send({
                 code: 1,
                 message: "Aplicativo inválido ou inativo."
@@ -418,7 +465,7 @@ router.post('/purchase/app', authenticateToken, async (req, res) => {
         const transaction = await Transaction.create({
             msisdn,
             appId,
-            email: user.email,
+            username: user.username,
             amount,
             transactionReference,
             status: 'pending' // Status inicial como pendente
@@ -445,7 +492,7 @@ router.post('/purchase/app', authenticateToken, async (req, res) => {
 
         // Atualizar o usuário com os apps comprados
         const updatedUser = await User.findOneAndUpdate(
-            { email: user.email },
+            { username: user.username },
             { pagos: pagos }, // Atualiza a lista de aplicativos comprados
             { new: true }
         );
@@ -488,6 +535,7 @@ router.post('/purchase/app', authenticateToken, async (req, res) => {
         });
     }
 });
+
 
 
 async function handlePaymentUsing(paymentOption, msisdn, amount, reference) {

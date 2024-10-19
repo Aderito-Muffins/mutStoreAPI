@@ -1,6 +1,7 @@
 const express = require('express');
 const connectDB = require('../database/mongodb');
 const User = require('../models/user');
+const AppModel = require('../models/app');
 const Feedback = require('../models/feedback');
 const authenticateToken = require('../middleware/jwt');
 const jwt = require('jsonwebtoken');
@@ -254,20 +255,23 @@ console.log(mobileNumber)
     }
 });
 
+
 router.post('/comment/app', authenticateToken, async (req, res) => {
     try {
       const { appId, comment } = req.body;
+   // Gerar um ID único (deve ser numérico se o modelo exige)
+   const uniqueID = await generateUniqueIdFeedback();
+      const id = uniqueID;
   
-      // Gerar um ID único (deve ser numérico se o modelo exige)
-      const uniqueID = await generateUniqueIdFeedback(); // Certifique-se de que isso retorna um número
-      const email = req.user.email;
+    // Certifique-se de que isso retorna um número
+      const username = req.user.username;
   
       // Cria o objeto de feedback
       const makeFeedback = new Feedback({
-        uniqueID,   // Use a variável correta
+        id,   // Use a variável correta
         appId,
         comment,
-        email       // Adiciona o email do usuário ao feedback
+        username       // Adiciona o email do usuário ao feedback
       });
   
       // Salva o feedback no banco de dados
@@ -290,6 +294,41 @@ router.post('/comment/app', authenticateToken, async (req, res) => {
       });
     }
   });
+
+  router.get('/comments/:appId', async (req, res) => {
+    try {
+      const { appId } = req.params; // Obtém o appId a partir dos parâmetros da URL
+  
+      // Busca todos os comentários associados ao appId
+      const comments = await Feedback.find({ appId: appId });
+  
+      // Verifica se há comentários
+      if (!comments || comments.length === 0) {
+        return res.status(404).json({
+          code: 1,
+          message: 'Nenhum comentário encontrado para este aplicativo.'
+        });
+      }
+  
+      // Retorna os comentários encontrados
+      res.json({
+        code: 0,
+        message: 'Comentários carregados com sucesso!',
+        data: comments
+      });
+  
+    } catch (error) {
+      // Tratar erros e retornar uma resposta apropriada
+      console.error(error);
+      res.status(500).json({
+        code: 2,
+        message: 'Erro ao buscar os comentários',
+        error: error.message
+      });
+    }
+  });
+  
+  
   
 
 router.post('/reset-password', async (req, res) => {

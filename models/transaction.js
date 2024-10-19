@@ -2,8 +2,8 @@ const mongoose = require('mongoose');
 
 const transactionSchema = new mongoose.Schema({
     msisdn: { type: String, required: true },
-    planId: { type: String, required: true },
-    email: { type: String, required: true },
+    appId: { type: String, required: true },
+    username: { type: String, required: true },
     amount: { type: Number, required: true },
     thirdPartyReference: { type: String },
     transactionReference: { type: String, required: true },
