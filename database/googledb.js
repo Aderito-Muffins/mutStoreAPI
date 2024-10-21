@@ -2,9 +2,10 @@ const admin = require('firebase-admin');
 const multer = require('multer');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
+require('dotenv').config();
 
 // Inicialize o Firebase Admin SDK
-const serviceAccount = require('./googleinfo.json');
+const serviceAccount = JSON.parse(process.env.FIREBASE_CREDENTIALS);
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
   storageBucket: 'mutstoremz.appspot.com' // Substitua pelo seu nome de bucket
