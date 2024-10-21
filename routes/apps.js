@@ -186,14 +186,10 @@ router.get('/moreInfo/:id', authenticateToken, async (req, res) => {
 });
 
 
-
-
-    
-
 // Rota para adicionar um aplicativo
 router.post('/create/app', upload, async (req, res) => {
     try {
-      const { nome, developerName, preco, description, politics, isMpesa, isEmola, isBankCard  } = req.body;
+      const { nome, developerName, preco, description, politics, isMpesa, isEmola, isBankCard, category  } = req.body;
   
       // Gerar um ID único (deve ser numérico se o modelo exige)
       const uniqueID = await generateUniqueId(); // Certifique-se de que isso retorna um número
@@ -237,7 +233,8 @@ router.post('/create/app', upload, async (req, res) => {
             isEmola,
             isMpesa,
             isBankCard
-          }
+          },
+          category
         });
   
         // Salvar o novo app
@@ -341,12 +338,6 @@ router.put('/change-status', authenticateToken, async (req, res) => {
         });
     }
 });
-
-
-
-
-
-
 
 router.get('/list/app/:id', async (req, res) => {
     try {
@@ -485,17 +476,20 @@ router.post('/purchase/app', authenticateToken, async (req, res) => {
                 message: "Ocorreu um erro durante a transação: " + paymentResult.message
             });
         }
+// Obtém a lista de aplicativos comprados pelo usuário
+let pagos = user.pagos || []; // Inicializa a lista de apps comprados se ela não existir
 
-        // 3. Atualizar os aplicativos comprados pelo usuário
-        let pagos = user.pagos || []; // Verificar se já existe a lista de apps pagos
-        pagos.push(appId); // Adicionar o appId à lista de aplicativos comprados
+// Verifica se o appId já não está na lista para evitar duplicatas
+if (!pagos.includes(appId)) {
+    pagos.push(appId); // Adiciona o appId à lista de aplicativos comprados
+}
 
-        // Atualizar o usuário com os apps comprados
-        const updatedUser = await User.findOneAndUpdate(
-            { username: user.username },
-            { pagos: pagos }, // Atualiza a lista de aplicativos comprados
-            { new: true }
-        );
+// Atualiza a lista de pagos no banco de dados
+const updatedUser = await User.findOneAndUpdate(
+    { username: user.username },
+    { $addToSet: { pagos: appId } }, // O operador $addToSet adiciona o appId ao array se ele ainda não estiver presente
+    { new: true } // Retorna o documento atualizado
+);
 
         if (!updatedUser) {
             return res.status(400).send({

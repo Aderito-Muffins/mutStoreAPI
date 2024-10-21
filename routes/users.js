@@ -87,7 +87,7 @@ router.post('/login', [
     try {
         const user = await User.findOne({ username });
         if (user && bcrypt.compareSync(password, user.password)) {
-            const token = jwt.sign({ id: user._id, username: user.username }, JWT_SECRET, { expiresIn: '1h' });
+            const token = jwt.sign({ id: user._id, username: user.username }, JWT_SECRET, { expiresIn: '168h' });
             return res.status(200).send({
                 error_code: 0,
                 info: "Bom",
@@ -163,19 +163,31 @@ router.post('/register', [
 });
 
 router.post('/forgot-reset', async (req, res) => {
-    const { mobileNumber } = req.body;
+    const { mobileNumber, username } = req.body; // Adicionando username
 
-    if (!mobileNumber) {
+    if (!mobileNumber || !username) {
         return res.status(400).send({
             error_code: 1,
             info: "Ruim",
-            msg: "Número de telefone necessário"
+            msg: "Número de telefone e nome de usuário são necessários"
         });
     }
 
+    // Verificar se o número de telefone começa com +258
+    let formattedNumber = mobileNumber;
+    if (!formattedNumber.startsWith('+258')) {
+        formattedNumber = '+258' + formattedNumber.replace(/^0/, ''); // Remove 0 inicial, se existir
+    }
+
     try {
-        // Verificar se o usuário existe
-        const user = await User.findOne({ mobileNumber });
+        // Verificar se o usuário existe com o mobileNumber e username
+        const user = await User.findOne({
+            $or: [
+                { mobileNumber: formattedNumber, username },
+                { mobileNumber: mobileNumber, username }
+            ]
+        });
+
         if (!user) {
             return res.status(404).send({
                 error_code: 1,
@@ -196,7 +208,7 @@ router.post('/forgot-reset', async (req, res) => {
         await twilioClient.messages.create({
             body: `Seu código de recuperação de senha é: ${resetCode}`,
             from: twilioPhoneNumber,
-            to: mobileNumber
+            to: formattedNumber // Enviar o número formatado
         });
 
         return res.status(200).send({
@@ -215,22 +227,33 @@ router.post('/forgot-reset', async (req, res) => {
     }
 });
 
-router.post('/verify-code', async (req, res) => {
-    const { mobileNumber, resetCode } = req.body;
 
-console.log(resetCode)
-console.log(mobileNumber)
-    if (!mobileNumber || !resetCode) {
+
+router.post('/verify-code', async (req, res) => {
+    const { mobileNumber, resetCode, username } = req.body; // Adicionando username
+
+    console.log(resetCode);
+    console.log(mobileNumber);
+
+    if (!mobileNumber || !resetCode || !username) {
         return res.status(400).send({
             error_code: 1,
             info: "Ruim",
-            msg: "Número de telefone e código são obrigatórios"
+            msg: "Número de telefone, código e nome de usuário são obrigatórios"
         });
+    }
+
+    // Formatação do número de telefone
+    let formattedMobileNumber = mobileNumber.trim(); // Remove espaços em branco
+
+    // Verifica se o número começa com +258; se não, adiciona
+    if (!formattedMobileNumber.startsWith("+258")) {
+        formattedMobileNumber = "+258" + formattedMobileNumber.replace(/^\D+/g, ''); // Remove caracteres não numéricos
     }
 
     try {
         // Verificar se o usuário e o código são válidos
-        const user = await User.findOne({ mobileNumber });
+        const user = await User.findOne({ mobileNumber: formattedMobileNumber, username });
         if (!user || user.resetCode !== parseInt(resetCode) || user.resetCodeExpiry < Date.now()) {
             return res.status(400).send({
                 error_code: 1,
@@ -255,6 +278,56 @@ console.log(mobileNumber)
     }
 });
 
+
+router.post('/give/dev', authenticateToken, async (req, res) => {
+    try {
+        // Busca o usuário autenticado no banco de dados
+        const user = await User.findOne({ username: req.user.username });
+  
+        // Verifica se o usuário foi encontrado
+        if (!user) {
+            return res.status(404).json({
+                code: 1,
+                message: 'Usuário não encontrado'
+            });
+        }
+
+        // Verifica se o usuário já é um desenvolvedor
+        if (user.userType === "dev") {
+            return res.status(400).json({
+                code: 1,
+                message: 'O usuário já é um desenvolvedor'
+            });
+        }
+  
+        // Atualiza o campo 'validated' para 2 (estado pendente)
+        user.validated = 2;
+  
+        // Salva as alterações no banco de dados
+        await user.save();
+  
+        // Retorna uma resposta de sucesso
+        res.json({
+            code: 0,
+            message: 'O pedido foi enviado. Aguarde, você terá uma resposta em até 30 dias.',
+            data: {
+                username: user.username,
+                validated: user.validated
+            }
+        });
+  
+    } catch (error) {
+        // Tratar erros e retornar uma resposta apropriada
+        console.error(error);
+        res.status(500).json({
+            code: 1,
+            message: 'Erro ao processar o pedido',
+            error: error.message
+        });
+    }
+});
+
+  
 
 router.post('/comment/app', authenticateToken, async (req, res) => {
     try {
@@ -328,16 +401,13 @@ router.post('/comment/app', authenticateToken, async (req, res) => {
     }
   });
   
-  
-  
+  router.post('/reset-password', async (req, res) => {
+    const { mobileNumber, resetCode, newPassword, username } = req.body; // Adicionando username
+    console.log(mobileNumber);
+    console.log(resetCode);
+    console.log(newPassword);
 
-router.post('/reset-password', async (req, res) => {
-    const { mobileNumber, resetCode, newPassword } = req.body;
-    console.log(mobileNumber)
-    console.log(resetCode)
-    console.log(newPassword)
-
-    if (!mobileNumber || !resetCode || !newPassword) {
+    if (!mobileNumber || !resetCode || !newPassword || !username) {
         return res.status(400).send({
             error_code: 1,
             info: "Ruim",
@@ -345,9 +415,17 @@ router.post('/reset-password', async (req, res) => {
         });
     }
 
+    // Formatação do número de telefone
+    let formattedMobileNumber = mobileNumber.trim(); // Remove espaços em branco
+
+    // Verifica se o número começa com +258; se não, adiciona
+    if (!formattedMobileNumber.startsWith("+258")) {
+        formattedMobileNumber = "+258" + formattedMobileNumber.replace(/^\D+/g, ''); // Remove caracteres não numéricos
+    }
+
     try {
         // Verificar se o usuário existe e se o código é válido
-        const user = await User.findOne({ mobileNumber });
+        const user = await User.findOne({ mobileNumber: formattedMobileNumber, username });
         if (!user || user.resetCode !== parseInt(resetCode) || user.resetCodeExpiry < Date.now()) {
             return res.status(400).send({
                 error_code: 1,
@@ -405,6 +483,7 @@ router.get('/list/user', authenticateToken, async (req, res) => {
                     mobileNumber: user.mobileNumber,
                     userStatus: user.userStatus,
                     userType: user.userType,
+                    pagos: user.pagos,
                     bi_Url: user.bi_Url,
                     posted: user.posted
                 } // Retorna os dados do usuário
@@ -460,7 +539,7 @@ router.get('/list-all', authenticateToken, async (req, res) => {
 
 router.put('/change-status', authenticateToken, async (req, res) => {
     const { username, status } = req.body;
-    
+
     // Obter o username do usuário autenticado a partir do token
     const adminUsername = req.user.username;
 
@@ -476,7 +555,7 @@ router.put('/change-status', authenticateToken, async (req, res) => {
     try {
         // Verificar se o usuário autenticado é um administrador
         const adminUser = await User.findOne({ username: adminUsername });
-        if (!adminUser || adminUser.userType != "admin") {
+        if (!adminUser || adminUser.userType !== "admin") {
             return res.status(403).send({
                 error_code: 1,
                 info: "Ruim",
@@ -487,8 +566,29 @@ router.put('/change-status', authenticateToken, async (req, res) => {
         // Procurar o usuário cujo status será alterado
         const user = await User.findOne({ username });
         if (user) {
+            // Verificar se o usuário a ser alterado é um administrador
+            if (user.userType === "admin") {
+                return res.status(403).send({
+                    error_code: 1,
+                    info: "Ruim",
+                    msg: "Não é permitido alterar o status de um administrador."
+                });
+            }
+
             // Atualizar o status do usuário
             user.validated = status ? 0 : 1; // 0 para aprovado, 1 para recusado
+            
+            // Se o status for false, mudar o userType para "normal"
+            if (!status) {
+                user.userType = "normal"; 
+            }
+            
+            // Se o status for true, mudar o userType para "dev"
+            if (status) {
+                user.userType = "dev"; 
+            }
+
+            // Salvar as alterações no banco de dados
             const updatedUser = await user.save();
 
             // Resposta de sucesso
@@ -516,6 +616,7 @@ router.put('/change-status', authenticateToken, async (req, res) => {
         });
     }
 });
+
 
 
 // Rota para alterar a senha do usuário
